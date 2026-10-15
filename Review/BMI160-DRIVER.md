@@ -22,7 +22,9 @@ Meshtastic 上游 **没有 BMI160 驱动**（已四角度交叉核实）。`src/
 
 ---
 
-## 2. 改动清单（5 个文件）
+## 2. 改动清单
+
+**PR 只含前 6 项**（6 个文件，+261/−4）；第 7 项是板级启用，属于变体分支。
 
 | # | 文件 | 改动 | 类型 |
 | --- | --- | --- | --- |
@@ -32,9 +34,9 @@ Meshtastic 上游 **没有 BMI160 驱动**（已四角度交叉核实）。`src/
 | 4 | `src/detect/ScanI2C.cpp` | `firstAccelerometer()` 列表加 `BMI160`，计数 15→16 | 改 2 行 |
 | 5 | `src/detect/ScanI2CTwoWire.cpp` | `0x68/0x69` 处按 `reg0x00 == 0xD1` 识别 | 加 1 个分支 |
 | 6 | `src/motion/AccelerometerThread.h` | include + `case` 分支 | 各加 3 行 |
-| 7 | `variants/esp32s3/diy/tmesh-s3-e22/variant.h` | `#define HAS_BMI160` | 加 1 行 |
+| 7 | `variants/esp32s3/diy/tmesh-s3-e22/variant.h` | `#define HAS_BMI160`（**不在 PR 里**） | 加 1 行 |
 
-> 3~6 是纯**追加**式改动，不影响其它板子（都由 `HAS_BMI160` 或
+> 1~6 是纯**追加**式改动，不影响其它板子（都由 `HAS_BMI160` 或
 > `CHIP_ID` 判定守门）。升级上游后按上表重新套用即可。
 
 ---
@@ -88,6 +90,40 @@ Meshtastic 上游 **没有 BMI160 驱动**（已四角度交叉核实）。`src/
 `MOTION_SENSOR_CHECK_INTERVAL_MS`(50ms) 改为 500ms。
 
 基线用低通更新（`prev = (prev*9 + new)/10`），避免缓慢倾斜被误判成运动。
+
+### 3.4 ⚠️ 差值必须用 int32 计算（CodeRabbit 发现，已修）
+
+上游 `BMI270Sensor.cpp` 里的写法是：
+
+```c
+int16_t deltaX = abs(x - prevX);
+```
+
+**这是一个真实的溢出 bug**，我照抄上游时把它带了过来。`x` 与 `prevX` 都是
+`int16_t`，`x - prevX` 在 `int` 中求值后赋回 `int16_t` 时会被截断：
+
+```
+prevX = -32768, x = 32767  ->  65535  ->  截断后 = -1
+```
+
+`abs()` 之后结果是 **1** —— 极小。也就是说**幅度最大的那次运动，
+恰恰是唯一必然漏检的情况**。±2g 量程下单轴满摆约 ±16384，
+硬敲或猛甩完全可能跨过这个范围。
+
+修复（已提交到 PR）：
+
+```c
+int32_t deltaX = abs((int32_t)x - (int32_t)prevX);
+int32_t deltaY = abs((int32_t)y - (int32_t)prevY);
+int32_t deltaZ = abs((int32_t)z - (int32_t)prevZ);
+```
+
+**低通滤波那行不需要改**：`(prevX * 9 + x) / 10` 是凸组合
+（0.9·prevX + 0.1·x），数学上不会超出输入范围。
+
+> **顺带发现：上游 `BMI270Sensor.cpp` 有同样的写法。**
+> 本 PR 没动那个文件（它不属于"新增驱动"的范围），但这是个**既存 bug**，
+> 值得单独提一个 issue 或 PR。`BMX160Sensor` 等其它驱动也值得查一遍。
 
 ---
 
