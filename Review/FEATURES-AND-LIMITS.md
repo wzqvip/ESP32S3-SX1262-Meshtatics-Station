@@ -104,20 +104,39 @@ INFO | [Position] Skip pos@...:6 broadcast; position sharing disabled on all cha
 **想让别人在地图上看到你，需要在 App 里给主频道开位置共享**
 （Channel → 主频道 → Position / 位置共享）。开了之后基站位置才会进 mesh。
 
-### 3.2 ⚠️ BMI160 加速度计：**Meshtastic 上游不支持**
+### 3.2 ✅ BMI160 加速度计：已支持（本仓库补的驱动）
 
-硬件是好的 —— 硬件自检读到了 `CHIP_ID=0xD1`，在 I2C 0x68 正常应答。
-但 Meshtastic 上游**没有任何 BMI160 驱动**：
+**上游原本不支持**，本仓库补了驱动，现已实机验证可用。详见
+[BMI160-DRIVER.md](BMI160-DRIVER.md)。
 
-- `src/modules/Telemetry/Sensor/` 下有 LSM6DS3 / LSM6DSL / MPU6050 /
-  LIS3DH / ICM42670 等，**没有 BMI160**
-- 全仓搜 `BMI160` **零命中**
+```
+DEBUG | Motion MotionSensor port: Wire address: 0x68 type: 90   ← 90 = BMI160
+DEBUG | AccelerometerThread::init ok
+```
 
-**所以 App 里不会出现这颗 IMU 的数据** —— 这是上游支持范围问题，
-不是接线、地址或配置问题。自检日志里的 `acc_info = 0` 就是这个原因。
+实机数据（板子平放，重力只落在 Z 轴且幅值 ≈1g，证明量程配置正确）：
 
-> 想要姿态/运动数据：换成上游支持的模块（如 **LSM6DS3 / MPU6050 / ICM42670**），
-> 接在同一 I2C 上即可被自动识别，无需改代码。
+```
+BMI160 accel x=591 y=-5422 z=-15420   (z 幅值 16399 ≈ 16384 = 1g @±2g)
+```
+
+**能做什么**（受 App 里两个开关控制）：
+
+| 功能 | 配置项 |
+| --- | --- |
+| 双击当作按钮 | `config.device.double_tap_as_button_press` |
+| 移动/敲击唤醒屏幕 | `config.display.wake_on_tap_or_motion` |
+
+**两点需要知道**：
+
+1. **BMI160 没有磁力计**，所以不产生罗盘航向（`providesHeading()` 保持
+   `false`，这是正确的）。
+2. **Meshtastic 的遥测里不含加速度原始值** —— 它只在设备本地用于上面两个
+   功能。所以 **App 里看不到 x/y/z 数值**，这是上游设计如此，不是驱动问题。
+
+> 硬件上 GPIO33 接着 BMI160 的中断脚（网表 `GPIO33 ; U1.11 U7.10`），
+> 但**驱动没用它** —— 与上游 `BMI270Sensor` 一致，走 50ms 轮询。
+> 对"敲击/移动"这类用途足够，也省掉一条中断线的配置。
 
 ### 3.3 ⚠️ PCF8563 RTC：已启用，首次上电需校时
 
@@ -171,10 +190,12 @@ WARN | ATGM336H: Can't enable NMEA MSG: 0/4
 | 气压 / 温度（BMP280） | ✅ |
 | 电压等电源遥测 | ✅ |
 | 屏幕亮度等显示设置 | ✅ |
+| 双击当按钮 / 敲击唤醒（BMI160） | ✅ **本仓库补的驱动**（无原始数值上报） |
 
 | 看不到的 | 原因 |
 | --- | --- |
-| 加速度 / 姿态（BMI160） | **上游无此驱动**，需换模块 |
+| 加速度原始值 x/y/z | 上游遥测不含该字段（本地用于敲击/唤醒） |
+| 罗盘航向 | BMI160 无磁力计 |
 | RTC 时间（断电后） | 需 RTC 模块装纽扣电池；首次上电需 GPS 校时一次 |
 
 ---
@@ -183,5 +204,6 @@ WARN | ATGM336H: Can't enable NMEA MSG: 0/4
 
 1. **在 App 里给主频道开位置共享** —— 否则基站位置不会进 mesh（见 3.1）
 2. **确认 RTC 模块装了纽扣电池** —— 然后让 GPS 校时一次，之后断电保时（见 3.3）
-3. **若需要 IMU，换 LSM6DS3 / MPU6050 / ICM42670**（见 3.2）
-4. **核对 5V 供电余量**再放开 2W（33S 峰值 1200 mA，见 `TX-POWER-AUDIT.md`）
+3. **核对 5V 供电余量**再放开 2W（33S 峰值 1200 mA，见 [TX-POWER-AUDIT.md](TX-POWER-AUDIT.md)）
+4. **若要把 BMI160 驱动合并回上游** —— 见 [BMI160-DRIVER.md](BMI160-DRIVER.md)
+   与 [UPSTREAM-CONTRIBUTION.md](UPSTREAM-CONTRIBUTION.md)

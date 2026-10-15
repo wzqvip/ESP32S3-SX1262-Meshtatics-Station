@@ -349,10 +349,53 @@ by the stock ESP32-S3-Pico board definition does not match this flash size.
 > tables changes where the NVS area lives, so an in-place update would leave the
 > saved Meshtastic configuration reading from the wrong region.
 
-A Meshtastic board variant for this design is included under
-`Review/meshtastic-variant/`, together with build notes and a verified binary in
-`Review/firmware/`. See `Review/MESHTASTIC-VARIANT.md` for the details,
-including how to start at low transmit power for first bring-up.
+### Verified Meshtastic build
+
+A complete, bench-verified Meshtastic port is included in this repository:
+
+| Where | What |
+| --- | --- |
+| `Review/meshtastic-variant/tmesh-s3-e22/` | The board variant (`variant.h`, `platformio.ini`) |
+| `Review/meshtastic-variant/boards/` | Board definition JSON (8 MB flash, PSRAM disabled) |
+| `Review/meshtastic-variant/bmi160-driver/` | BMI160 accelerometer driver (not in upstream) |
+| `Review/meshtastic-variant/upstream-modified/` | Modified upstream files, for reference |
+| `Review/firmware/` | Prebuilt, verified binaries |
+
+**What is verified working on hardware:**
+
+- Boot, USB serial, screen (SSD1306), and the BOOT button (click navigates,
+  long-press opens the menu)
+- SX1262 radio initialisation, DIO2 RF switch, and the 33S power table
+  (chip held to 5 dBm, well under the module's 9 dBm input limit)
+- Mesh traffic: receiving, decrypting, routing, rebroadcasting, and transmitting
+- GPS fix and NTP-grade time from the ATGM336H
+- BMP280 environmental telemetry, PCF8563 RTC, BMI160 motion sensing
+
+**Board-specific items firmware must get right:**
+
+1. **RF switching** — DIO2 must be configured as the RF switch control
+   (`SX1262_DIO2_AS_RF_SWITCH`). The MCU cannot toggle `TXEN`/`RXEN`.
+2. **Transmit power** — see the warning above; use `EBYTE_E22_900M33S`.
+3. **PSRAM must stay disabled** — the on-die 2 MB PSRAM fails to initialise in
+   the bootloader on this module, causing a reboot loop. The board JSON
+   therefore declares no PSRAM. See `Review/PSRAM-FIX-SOLVED.md`.
+4. **GPS pins** — `GPS_RX_PIN 8` / `GPS_TX_PIN 9` (named from the ESP32's side).
+5. **RTC** — needs `PCF8563_RTC 0x51` plus the `PCF8xRTC` library dependency.
+
+Read the full write-ups for the reasoning and the evidence behind each item:
+
+| Document | Subject |
+| --- | --- |
+| [MESHTASTIC-VARIANT.md](Review/MESHTASTIC-VARIANT.md) | Variant adaptation and build steps |
+| [FLASHING.md](Review/FLASHING.md) | How to flash, with a working script |
+| [TX-POWER-AUDIT.md](Review/TX-POWER-AUDIT.md) | Why the radio cannot overdrive its PA |
+| [GPS-FIX-SOLVED.md](Review/GPS-FIX-SOLVED.md) | GPS pin direction and NMEA fallback |
+| [BMI160-DRIVER.md](Review/BMI160-DRIVER.md) | The added accelerometer driver |
+| [PSRAM-FIX-SOLVED.md](Review/PSRAM-FIX-SOLVED.md) | The PSRAM boot-loop root cause |
+| [CURRENT-STATUS.md](Review/CURRENT-STATUS.md) | Current state and known trade-offs |
+| [FEATURES-AND-LIMITS.md](Review/FEATURES-AND-LIMITS.md) | What the phone app can see and control |
+| [HARDWARE-SELFTEST.md](Review/HARDWARE-SELFTEST.md) | Per-peripheral self-test results |
+| [UPSTREAM-CONTRIBUTION.md](Review/UPSTREAM-CONTRIBUTION.md) | How to submit the driver upstream |
 
 ## Safety and RF Notes
 
