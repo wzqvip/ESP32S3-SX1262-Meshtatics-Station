@@ -137,6 +137,48 @@
 #define I2C_SCL 18   // U7.4 / U10.4 / U11.3 / U13.3
 
 // ---------------------------------------------------------------------------
+// RTC — PCF8563 (U10, 地址 0x51)
+// ---------------------------------------------------------------------------
+// ★ 必须定义这个宏, 否则 I2C 扫描不会把 0x51 认成 RTC:
+//     src/detect/ScanI2CTwoWire.cpp:412
+//         #ifdef PCF8563_RTC
+//             SCAN_SIMPLE_CASE(PCF8563_RTC, RTC_PCF8563, "PCF8563", addr)
+//         #endif
+//   不定义时的现象: 自检/扫描能确认器件在 0x51 应答, 但 Meshtastic 报
+//   "RTC: unknown" 而不会启用它 (GPS 时间也就没有后备电池保护)。
+//   硬件自检已用芯片级方式确认: PCF8563 在 0x51 正常应答。
+//   参考上游: tbeam-s3-core / t-watch-s3 / m5stack_coreink 等都用 0x51。
+//   定义后 configuration.h:41-43 会映射成:
+//       #define PCF_RTC_ADDRESS PCF8563_RTC
+//       #define PCF_RTC_CHIP PCF8xRTC::PCF8563
+#define PCF8563_RTC 0x51
+#define PIN_RTC_INT 14   // U10.6 PCF8563 中断 -> GPIO14
+                         // (正确宏名是 PIN_RTC_INT; 上游 nano-g2-ultra / t-echo 用法一致)
+
+// ---------------------------------------------------------------------------
+// 加速度计 — GY-BMI160 (U7, I2C 0x68, CHIP_ID 0xD1)
+// ---------------------------------------------------------------------------
+// ★ 上游原本【没有】BMI160 驱动 (只有 BMI270 / BMX160 / BMM150 等)。
+//   本仓库为这块板子补了一份: src/motion/BMI160Sensor.{h,cpp}
+//   设计上与 BMI270Sensor 对齐 (纯 I2C 寄存器访问, 不依赖外部库),
+//   但 BMI160 不需要 BMI270 的 8KB 配置块, 只需两条模式寄存器即可工作。
+//
+//   需要配套的上游改动 (都已在本地完成, 副本见
+//   Review/meshtastic-variant/upstream-modified/):
+//     1) src/detect/ScanI2C.h        -> 枚举里加 BMI160
+//     2) src/detect/ScanI2C.cpp      -> firstAccelerometer() 列表里加 BMI160
+//     3) src/detect/ScanI2CTwoWire.cpp -> 0x68/0x69 处按 CHIP_ID 0xD1 识别
+//     4) src/motion/AccelerometerThread.h -> include + case 分支
+//     5) 本文件: #define HAS_BMI160
+//
+//   硬件自检已用芯片级方式确认这颗芯片正常 (读 CHIP_ID = 0xD1)。
+//
+//   注意: BMI160 的 0x68 与 MPU6050 / BMI270 / LSM6DS3 冲突, 靠 0x00 寄存器
+//   的固定值 0xD1 唯一区分 (MPU6050 是 0x75=0x68, BMI270 是 0x00=0x24,
+//   BMX160 是 0x00=0xD8)。
+#define HAS_BMI160
+
+// ---------------------------------------------------------------------------
 // 显示 — 0.96" I2C OLED (U13), 复用上面的 I2C 总线
 // ---------------------------------------------------------------------------
 // 本板 OLED 只用了 4 根线: +5V / GND / SDA / SCL (网表 U13.1..U13.4)
