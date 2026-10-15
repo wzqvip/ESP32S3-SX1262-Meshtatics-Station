@@ -1,17 +1,24 @@
 # BMI160 加速度计驱动（为 T-mesh 新增）
 
 > **状态：已实机验证可用。** 检测、初始化、真实数据读取全部通过。
+> **上游确认无此驱动，且无人重复劳动**（2026-10-15 核查，见
+> [UPSTREAM-CONTRIBUTION.md](UPSTREAM-CONTRIBUTION.md) 1.5 节）。
 
 ---
 
 ## 1. 为什么需要自己加
 
-Meshtastic 上游 **没有 BMI160 驱动**。`src/motion/` 里有同族的
-`BMI270Sensor` / `BMX160Sensor` / `BMM150Sensor`，但没有 BMI160，
-全仓搜 `BMI160` 零命中。
+Meshtastic 上游 **没有 BMI160 驱动**（已四角度交叉核实）。`src/motion/` 里有
+同族的 `BMI270Sensor` / `BMX160Sensor` / `BMM150Sensor` / `BMA423Sensor` /
+`BHI260APSensor`，但没有 BMI160。
 
 本板 U7（GY-BMI160，I2C `0x68`，`CHIP_ID = 0xD1`）硬件正常，
 缺的只是软件支持。所以补了一份驱动。
+
+> ⚠️ **合并上游时注意**：驱动开发基线是 `04cb888`，已落后上游 `develop`
+> 8 个提交，其中 `ScanI2C.cpp` 与 `ScanI2CTwoWire.cpp` 上游有改动。
+> **不要整文件覆盖**，按 [UPSTREAM-CONTRIBUTION.md](UPSTREAM-CONTRIBUTION.md)
+> 3.3 节的逐点说明合并。
 
 ---
 

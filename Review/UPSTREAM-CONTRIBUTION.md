@@ -42,6 +42,25 @@ Meshtastic 官方 CONTRIBUTING 明确写了：
 
 ---
 
+## 1.5 已核实：上游确实没有 BMI160，也没有人在做
+
+> 核查日期 **2026-10-15**。四个独立角度交叉验证，结论一致。
+
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| `src/motion/BMI160Sensor.{h,cpp}` 是否存在 | GET `raw.githubusercontent.com/.../develop/src/motion/BMI160Sensor.h` | **HTTP 404** |
+| 4 个待改文件是否已含 BMI160 | 拉 develop 原文 grep `BMI160` | **各 0 次命中** |
+| 是否已有人提 PR / issue | `GET /search/issues?q=BMI160+repo:meshtastic/firmware` | **`total_count: 0`** |
+| `src/motion/` 现有 Bosch 家族驱动 | `GET /repos/meshtastic/firmware/contents/src/motion` | 只有 `BMI270` / `BMX160` / `BMM150` / `BMA423` / `BHI260AP`，**无 BMI160** |
+
+**结论：这是个真实缺口，且无人重复劳动。** 可以放心提 PR。
+
+> ⚠️ `develop` 的 `BMI270Sensor.cpp` 有 **56,638 字节**（我本地基线那份才 594 行）
+> —— 说明上游在这块代码上很活跃。提交前**务必先 rebase 到最新 develop**
+> 再跑一次编译，别用旧基线的结论。
+
+---
+
 ## 2. 然后：开一个 issue / discussion 先说一声
 
 官方希望**先讨论再写代码**，避免重复劳动：
@@ -69,10 +88,14 @@ git remote add upstream https://github.com/meshtastic/firmware.git
 git fetch upstream
 ```
 
-### 3.2 从最新的 master 开分支
+### 3.2 从最新的 develop 开分支
+
+> ⚠️ **默认分支是 `develop`，不是 `master`。**
+> `master` 是发布分支。开 PR 必须基于 `develop`。
+> （依据：GitHub API `repos/meshtastic/firmware` 返回 `"default_branch":"develop"`）
 
 ```powershell
-git checkout -b feat/bmi160-driver upstream/master
+git checkout -b feat/bmi160-driver upstream/develop
 ```
 
 **分支名要有意义**：`feat/bmi160-driver`、`feat/tmesh-s3-e22-variant`。
@@ -84,26 +107,87 @@ git checkout -b feat/bmi160-driver upstream/master
 ```powershell
 $src = 'C:\Users\WANGZ\Documents\GitHub\ESP32S3-SX1262-Meshtatics-Station\Review\meshtastic-variant'
 
-# --- BMI160 驱动 (PR #1) ---
+# --- 2 个全新文件: 直接复制即可 (上游没有, 不会冲突) ---
 Copy-Item "$src\bmi160-driver\BMI160Sensor.h"   'D:\meshtastic-fork\src\motion\'
 Copy-Item "$src\bmi160-driver\BMI160Sensor.cpp" 'D:\meshtastic-fork\src\motion\'
-
-# 枚举/探测/hread 的改动: 这几个文件已含改动, 但【不要整文件覆盖】
-# —— 上游可能已变。请按 Review/BMI160-DRIVER.md 第 2 节的清单手工合并。
 ```
 
-> ⚠️ **`upstream-modified/` 里的大文件（`ScanI2CTwoWire.cpp` 1257 行、
-> `GPS.cpp` 2513 行等）是【改动后的完整副本】，只用于对照参考。**
-> 直接覆盖上游文件会连带覆盖掉上游的新提交。**必须手工合并那几处小改动。**
+> ⚠️ **`upstream-modified/` 里的大文件（`ScanI2CTwoWire.cpp`、`GPS.cpp` 等）
+> 是【基于旧基线 04cb888 的改动后完整副本】，只用于对照参考。**
+> 直接覆盖会连带覆盖掉上游的新提交。**另外 4 处必须手工合并。**
 
-**BMI160 需要手工合并的 4 处**（详见 [BMI160-DRIVER.md](BMI160-DRIVER.md) 第 2 节）：
+#### ⚠️ 基线落后的实情（2026-10-15 核实）
+
+| 项 | 状态 |
+| --- | --- |
+| 我的构建基线 | `04cb888`（2026-10-13） |
+| 上游 `develop` HEAD | `bda9f8c` |
+| **落后** | **8 个提交** |
+| 我改的 4 个文件中**上游已改过的** | **`ScanI2C.cpp`**、**`ScanI2CTwoWire.cpp`** |
+
+**逐个文件的影响：**
+
+| 文件 | 上游是否已改 | 能否直接套 |
+| --- | --- | --- |
+| `src/motion/BMI160Sensor.{h,cpp}` | 不存在 | ✅ 直接新增 |
+| `src/detect/ScanI2C.h` | 未改动 | ✅ 可干净套 |
+| `src/motion/AccelerometerThread.h` | 未改动 | ✅ 可干净套 |
+| `src/detect/ScanI2C.cpp` | **已改（+5/−4）** | ⚠️ **需手工合并** |
+| `src/detect/ScanI2CTwoWire.cpp` | **已改（+32/−2）** | ✅ 改动在别处，我的插入点未受影响 |
+
+#### 手工合并点 1：`src/detect/ScanI2C.cpp`
+
+上游把 `BMM150` 挪到了列表**末尾**（因为它其实是磁力计）：
+
+```c
+// develop 当前内容
+// BMM150 is a magnetometer: last, so any real IMU takes the accelerometer thread and leaves it to the magnetometer one
+ScanI2C::DeviceType types[] = {MPU6050, LIS3DH,   SC7A20,    BMA423,     LSM6DS3,  BMX160,  STK8BAXX, ICM20948,
+                               BMI270,  BHI260AP, ICM42607P, ISM330DHCX, QMA6100P, QMI8658, BMM150};
+return firstOfOrNONE(15, types);
+```
+
+**要在保留上游排序的前提下加 `BMI160`，并把计数改成 16**：
+
+```diff
+ ScanI2C::DeviceType types[] = {MPU6050, LIS3DH,   SC7A20,    BMA423,     LSM6DS3,  BMX160,  STK8BAXX, ICM20948,
+-                               BMI270,  BHI260AP, ICM42607P, ISM330DHCX, QMA6100P, QMI8658, BMM150};
+-return firstOfOrNONE(15, types);
++                               BMI270,  BMI160,   BHI260AP,  ICM42607P,  ISM330DHCX, QMA6100P, QMI8658, BMM150};
++return firstOfOrNONE(16, types);
+```
+
+> **不要**用你本地那份直接覆盖 —— 那会把上游刚做的 BMM150 重排改回去。
+
+#### 手工合并点 2：`src/detect/ScanI2CTwoWire.cpp`
+
+**好消息：上游在这个文件里的改动（`AHT10`/FocalTech 触摸判别、`VEML7700`/`BMM150` 判别）
+都在别的位置**（develop 的 541、889 行附近），**没有碰 `0x68` 那个 case**。
+所以我的插入点在 develop 上依然有效。
+
+在 `else if (registerValue == 0xD8)`（BMX160）分支**之后**、
+最后的 `else {`（0x75 探测 + `probeSEN5X`）**之前**插入：
+
+```c
+#if defined(HAS_BMI160)
+                else if (registerValue == 0xD1) { // BMI160 chip ID at register 0x00
+                    type = BMI160;
+                    logFoundDevice("BMI160", (uint8_t)addr.address);
+                    break;
+                }
+#endif
+```
+
+> **位置是关键**：必须在 `else` **之前**，否则会先落进 `else`，
+> 被里面的 `probeSEN5X()` 抢先匹配成 SEN5X（`SEN5X_ADDR` 也是 0x69，
+> 探测在 0x68 上会误报）。详见 [BMI160-DRIVER.md](BMI160-DRIVER.md) 3.2 节。
+
+#### 手工合并点 3 与 4
 
 | 文件 | 改动 |
 | --- | --- |
-| `src/detect/ScanI2C.h` | 枚举加 `BMI160` |
-| `src/detect/ScanI2C.cpp` | `firstAccelerometer()` 列表加 BMI160，计数 +1 |
-| `src/detect/ScanI2CTwoWire.cpp` | `0x68/0x69` case 里加 `0xD1` 分支 |
-| `src/motion/AccelerometerThread.h` | `#ifdef HAS_BMI160` include + case |
+| `src/detect/ScanI2C.h` | 枚举里 `BMI270` 后加 `BMI160` |
+| `src/motion/AccelerometerThread.h` | `#ifdef HAS_BMI160` 的 include + `case` 分支 |
 
 ### 3.4 格式化（官方要求）
 
@@ -172,16 +256,16 @@ git push -u origin feat/bmi160-driver
 ```powershell
 cd D:\meshtastic-fork
 git fetch upstream
-git checkout master
-git merge upstream/master          # 或 git rebase upstream/master
-git push origin master
+git checkout develop
+git merge upstream/develop
+git push origin develop
 ```
 
-然后把你自己的分支 rebase 到新的 master：
+然后把你自己的分支 rebase 到新的 develop：
 
 ```powershell
 git checkout feat/bmi160-driver
-git rebase upstream/master
+git rebase upstream/develop
 ```
 
 > **为什么不直接用你现在的仓库提 PR**：
@@ -197,7 +281,7 @@ git rebase upstream/master
 
 - [ ] 已用**提 PR 的账号**签了 [CLA](https://cla-assistant.io/meshtastic/firmware)
 - [ ] 在 Discussions 里开过话题（至少提一句）
-- [ ] 从 `upstream/master` 开了独立分支
+- [ ] 从 `upstream/develop` 开了独立分支（**不是 master**）
 - [ ] **只改了必要文件**，没有把 `Review/`、`tools/`、固件二进制带进去
 - [ ] **没有**改动公共调试宏（`TMESH_LOW_POWER_TEST` 之类）
 - [ ] 跑过 `trunk fmt`
