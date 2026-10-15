@@ -32,6 +32,37 @@ complex hand-soldered RF and sensor circuit.
 - Modular construction for easier assembly and replacement
 - Manufacturing outputs included for PCB fabrication and assembly
 
+## Photos
+
+**Assembled board, powered and running.** Two inline meters show the 12 V feed
+into the board and the board's own consumption. At idle (radio receiving, no
+screen activity, GPS not locked) the whole board draws about **78 mW** —
+17.2 mA at 4.56 V. That figure says nothing about transmit current; the 2 W
+burst is a separate measurement, see *Safety and RF Notes*.
+
+![Assembled board running, with inline power meters](Photos/01-assembled-board-running.png)
+
+**LoRa status screen.** This is the default frame, showing the BLE MAC suffix,
+role, region and preset, operating frequency, and channel utilisation.
+
+![OLED showing the LoRa status screen](Photos/02-oled-lora-screen.png)
+
+**Inside the enclosure.** The E22-900M33S radio with its SMA pigtail on the
+left, the MP2482 buck stage with its 4.7 uH inductor on the right, and the
+GY-BMI160 and PCF8563 (with backup cell) on the I2C bus at the bottom.
+
+![Board inside the 3D printed enclosure](Photos/03-enclosure-inside.png)
+
+> **These photos show an early bring-up build, not the current firmware.** The
+> OLED frame in the first two was taken before the button support and the
+> module set were finished: it reads `1/1` where a current build shows 10
+> frames, uses the `LongTurbo` preset (908.750 MHz) rather than `LongFast`
+> (906.875 MHz), and still shows the old *"Use the Select button..."* welcome
+> text that appeared when the firmware did not yet know the board had a BOOT
+> button. The photographs are here to document the physical hardware; for what
+> the current build actually prints, see
+> [CURRENT-STATUS.md](Review/CURRENT-STATUS.md).
+
 ## Hardware Modules
 
 ### Controller
@@ -286,7 +317,12 @@ helper script:
 - `PCB/ProPrj_T-mesh_2026-09-06.epro2`: EasyEDA Pro project archive
 - `Datasheet/`: module and controller reference datasheets
 - `Reference/`: Nano G1 Explorer, T-Beam-S3, and related hardware references
+- `Photos/`: photographs of the assembled board and enclosure
 - `Review/`: design review notes, a Meshtastic board variant, and a build of it
+- `tools/`: PowerShell helpers for flashing and capturing serial output
+- `hw-selftest/`: standalone PlatformIO project that exercises each peripheral
+- `gps-diag/`: standalone PlatformIO project that determines the GPS pin
+  direction and baud rate empirically
 
 > **Note on `ProPrj_T-mesh_2026-09-06.epro2`:** this archive bundles more than one
 > board. Its project metadata describes a different, smaller nRF52840-based
