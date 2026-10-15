@@ -1,7 +1,8 @@
 # Meshtastic 固件适配说明（T-mesh）
 
-> 目标板：ESP32-S3-Pico（Waveshare，16 MB flash / 8 MB PSRAM）+ Ebyte E22-900M30S（1 W）
-> 上游：`meshtastic/firmware` master 分支
+> 目标板：ESP32-S3-Pico 复制版（ESP32-S3 N8R2，**8 MB flash / 2 MB PSRAM**）
+> + Ebyte **E22-900M33S（2 W）**
+> 上游：`meshtastic/firmware` **`develop`** 分支（默认分支；`master` 是发布分支）
 > 变体路径：`variants/esp32s3/diy/tmesh-s3-e22/`
 
 ---
@@ -47,7 +48,7 @@ Meshtastic **原生就支持**这块板子的射频拓扑，不需要改任何�
 | --- | --- | --- | --- |
 | `variants/esp32s3/t-beam-1w` | SX1262 + 外部 1W PA | `SX126X_DIO2_AS_RF_SWITCH` + `SX126X_RXEN 21` | ⚠️ 思路对，但它多一个 MCU 控制的 LNA 脚 |
 | `variants/esp32s3/diy/t-energy-s3_e22` | **同为 E22** | `SX126X_TXEN 10` + `SX126X_RXEN 12`（MCU 直控） | ❌ 同模块，但控制方式相反，**不能照抄** |
-| **本板 tmesh-s3-e22** | E22-900M30S | **仅 `SX126X_DIO2_AS_RF_SWITCH`** | ✅ |
+| **本板 tmesh-s3-e22** | E22-900M33S | **仅 `SX126X_DIO2_AS_RF_SWITCH`** | ✅ |
 
 **关键的坑**：`t-energy-s3_e22` 也是 E22 模块，搜索"Meshtastic E22"最容易先找到它。
 但它的板子把 TXEN/RXEN 接到了 MCU GPIO，而**本板没有**。
@@ -87,7 +88,8 @@ build_flags =
   -D ARDUINO_USB_CDC_ON_BOOT=1
   -I variants/esp32s3/diy/tmesh-s3-e22
   -D TMESH_S3_E22
-  -D EBYTE_E22_900M30S         ; ★ 激活上游的 E22-900M30S 功率映射表 (见第 6 节)
+  -D EBYTE_E22_900M33S         ; ★ 激活上游的 E22-900M33S 功率映射表 (见第 6 节)
+                               ;   本板是 33S, 不能用 30S 的表 (见 6.2.1)
   -D TMESH_LOW_POWER_TEST      ; ★ 首次上电: 小功率模式, 验证后注释掉
 ```
 
@@ -245,10 +247,10 @@ variants/esp32s3/diy/tmesh-s3-e22/variant.h \
 # pio run -t compiledb 会生成 compile_commands.json
 $j = Get-Content compile_commands.json -Raw | ConvertFrom-Json
 ($j | Where-Object { $_.file -like '*RadioInterface.cpp' }).command |
-  Select-String -Pattern 'EBYTE_E22_900M30S|TMESH_LOW_POWER_TEST'
+  Select-String -Pattern 'EBYTE_E22_900M33S|TMESH_LOW_POWER_TEST'
 ```
 
-`EBYTE_E22_900M30S` 与 `TMESH_LOW_POWER_TEST` 都在。
+`EBYTE_E22_900M33S` 与 `TMESH_LOW_POWER_TEST` 都在。
 
 **b) 数值层**——用**编译期断言**。这比读日志强，因为值不对就直接编译失败：
 
@@ -256,12 +258,12 @@ $j = Get-Content compile_commands.json -Raw | ConvertFrom-Json
 // src/mesh/SX126xInterface.cpp 顶部 (所有头文件之后)
 #if defined(TMESH_S3_E22)
 #if defined(TMESH_LOW_POWER_TEST)
-#if (TX_GAIN_LORA != 7) || (SX126X_MAX_POWER != 15)
-#error "TMESH: 小功率模式预期 TX_GAIN_LORA=7 / SX126X_MAX_POWER=15。"
+#if (TX_GAIN_LORA != 25) || (SX126X_MAX_POWER != 25)
+#error "TMESH: 33S 小功率模式预期 TX_GAIN_LORA=25 / SX126X_MAX_POWER=25。"
 #endif
 #else
-#if (TX_GAIN_LORA != 7) || (SX126X_MAX_POWER != 22)
-#error "TMESH: E22-900M30S 预期 TX_GAIN_LORA=7 / SX126X_MAX_POWER=22。"
+#if (TX_GAIN_LORA != 25) || (SX126X_MAX_POWER != 8)
+#error "TMESH: E22-900M33S 预期 TX_GAIN_LORA=25 / SX126X_MAX_POWER=8。"
 #endif
 #endif
 #endif
@@ -309,7 +311,7 @@ $j = Get-Content compile_commands.json -Raw | ConvertFrom-Json
    如果 result 非 0 或这行缺失 → `SX126X_DIO2_AS_RF_SWITCH` 没生效。
 2. **确认 U4 跳线是短接的**（万用表蜂鸣档量 U4 两个焊盘）。
    开路则 TXEN 恒低，模块停在约 2 µA 软件关断，**收发全废**。
-3. **TX 电流**：1 W 发射时整机电流应有明显跳升（约 +650 mA 量级）。
+3. **TX 电流**：2 W 发射时整机电流应有明显跳升（约 **+1200 mA** 量级）。
    若发射电流几乎不变 → 射频开关没切到发射路径。
 4. **RX 灵敏度**：两颗设备对通，看 `rx_snr` / `rx_rssi` 是否正常。
 5. **I2C 设备扫描**：确认 OLED / BMI160 / BMP280 是否都在总线上。
@@ -341,12 +343,18 @@ if (power > loraMaxPower) power = loraMaxPower;   // ← loraMaxPower = SX126X_M
 
 `config.lora.tx_power` 默认是 **0**，会被解释成"用区域上限"（US = 30 dBm）。
 
-### 6.2 上游已经内置了 E22-900M30S 的实测表
+### 6.2 上游已经内置了 E22 各型号的功率表
 
-**不需要自己算，也不需要自定义映射表。** `src/configuration.h:143`：
+**不需要自己算，也不需要自定义映射表。** `src/configuration.h`：
 
 ```c
-#ifdef EBYTE_E22_900M30S
+#ifdef EBYTE_E22_900M33S          // ← 本板用这一段
+// 25dB PA gain and 33dB rated output; based on TX Power Curve from E22-900M33S_UserManual_EN_v1.0.pdf
+#define TX_GAIN_LORA 25
+#define SX126X_MAX_POWER 8
+#endif
+
+#ifdef EBYTE_E22_900M30S          // ← 不是本板, 别用
 // 10dB PA gain and 30dB rated output; based on measurements from
 // https://github.com/S5NC/EBYTE_ESP32-S3/.../E22-900M30S power output testing.txt
 #define TX_GAIN_LORA 7
@@ -354,43 +362,44 @@ if (power > loraMaxPower) power = loraMaxPower;   // ← loraMaxPower = SX126X_M
 #endif
 ```
 
-**所以正确做法就是加一个 build flag：`-D EBYTE_E22_900M30S`。**
+**所以正确做法就是加 build flag：`-D EBYTE_E22_900M33S`。**
 
-上游有 6 个 variant 都在用这个开关，包括 `WashTastic`（正是这块板子描述里"致敬"的那个项目）。
+上游有多个 variant 在用这些开关（`EBYTE_E22_900M30S` 出现在 6 个变体里，
+包括 `WashTastic`）。**本板装的是 33S，必须选 33S 那一段** —— 原因见下一节。
 
 ### 6.2.1 ⚠️ 不同 E22 型号的芯片输入上限差 14 dB —— 换模块必读
 
 **这是最容易烧硬件的坑。** 同为 E22-900M 系列，对"射频芯片该给多大功率"的要求完全不同：
 
-| | **E22-900M30S**（本板） | **E22-900M33S** |
+| | **E22-900M33S**（本板） | **E22-900M30S** |
 | --- | --- | --- |
-| 最大发射功率 | 29.5 / **30.0** / 31 dBm | 32.5 / **33** / 33.5 dBm |
-| **芯片输出上限** | **datasheet 无此限制** | ⚠️ **"The output power of the RF chip cannot be greater than 9dBm"** |
-| 发射电流 | **650 mA** | **1200 mA** |
+| 最大发射功率 | 32.5 / **33** / 33.5 dBm | 29.5 / **30.0** / 31 dBm |
+| **芯片输出上限** | ⚠️ **"The output power of the RF chip cannot be greater than 9dBm"** | **datasheet 无此限制** |
+| 发射电流 | **1200 mA** | **650 mA** |
 | 阻塞功率 | 10 dBm | 10 dBm |
-| Meshtastic 预设 | `TX_GAIN_LORA 7` / `SX126X_MAX_POWER 22` | `TX_GAIN_LORA 25` / `SX126X_MAX_POWER 8` |
+| Meshtastic 预设 | `TX_GAIN_LORA 25` / `SX126X_MAX_POWER 8` | `TX_GAIN_LORA 7` / `SX126X_MAX_POWER 22` |
 
-**芯片输出上限相差 14 dB。** 把 30S 的配置套到 33S 上会直接打坏内部 PA。
+**芯片输出上限相差 14 dB。** 把 30S 的配置套到本板的 33S 上会直接打坏内部 PA
+（芯片被推到 22 dBm，远超 9 dBm 上限）。
 
 > **别被命名误导**：型号里的数字不是增益。`900M33S` 的 PA 增益高达 **25 dB** ——
 > 正因为它增益太高，才必须把输入压到 9 dBm 以下；而 30S 增益只有约 7~10 dB，
 > 所以能吃下芯片的 +22 dBm 满功率。
 >
 > 出处：
-> - 33S: <https://www.cdebyte.com/products/E22-900M33S/1#Parameters>
+> - 33S（本板）: <https://www.cdebyte.com/products/E22-900M33S/1#Parameters>
 >   （Maximum transmit power 一行，Remark 列写明了 9 dBm 限制）
 > - 30S: `Datasheet/E22-900M30S_datasheet_C411294_*.pdf` 主要参数表
 >   （最大发射功率 29.5/30.0/31 dBm，**无**芯片输入限制）
 
-**代码里已加防呆**（`variant.h`）：同时定义 `EBYTE_E22_900M30S` 和
-`EBYTE_E22_900M33S` 会直接 `#error` 编译失败。
+**代码里已加防呆**（`variant.h`）：同时定义 `EBYTE_E22_900M33S` 和
+`EBYTE_E22_900M30S` 会直接 `#error` 编译失败。正常构建只应定义前者。
 
-**真要换 33S 时，三件事必须一起做**：
+**若真要改用 30S（降级到 1 W），三件事必须一起做**：
 
-1. `platformio.ini` 改为 `-D EBYTE_E22_900M33S`（用它自己的 25/8 表）
-2. **重新核算供电** —— 本板 MP2482 与 470 µF 储能是按 650 mA 设计的，
-   33S 需要 1200 mA
-3. **确认当地法规** —— 2 W 在多数地区需要许可，不能当 drop-in 替换
+1. `platformio.ini` 改为 `-D EBYTE_E22_900M30S`（用它自己的 7/22 表）
+2. 供电可以放宽 —— 30S 只需 650 mA，本板原有设计正好匹配
+3. 确认当地法规（1 W 的限制比 2 W 宽松）
 
 **另一个容易忽略的点**：`Blocking power 10 dBm` 对两块模块都一样。
 近距离（<1 m）用大功率对射有烧接收前端的风险，出厂说明也提到"近距离使用烧毁概率较小"。
@@ -442,10 +451,11 @@ if (power > loraMaxPower) power = loraMaxPower;   // ← loraMaxPower = SX126X_M
 
 `variant.h` 里有两道检查：
 
-1. `#if defined(USE_SX1262) && !defined(EBYTE_E22_900M30S)` → `#error`
+1. `#if !defined(EBYTE_E22_900M33S) && !defined(EBYTE_E22_900M30S)` → `#error`
+   （两个模块宏必须定义一个），以及"两个同时定义"也 `#error`
 2. `src/mesh/SX126xInterface.cpp` 顶部（所有头文件之后）校验实际数值：
-   - 小功率模式：`TX_GAIN_LORA == 7 && SX126X_MAX_POWER == 15`
-   - 正常模式：`TX_GAIN_LORA == 7 && SX126X_MAX_POWER == 22`
+   - 小功率模式：`TX_GAIN_LORA == 25 && SX126X_MAX_POWER == 25`
+   - 正常模式：`TX_GAIN_LORA == 25 && SX126X_MAX_POWER == 8`
 
 > **位置很关键**：`variant.h` 是 `configuration.h:37` 包含的，而
 > `TX_GAIN_LORA` / `NUM_PA_POINTS` 要到 `configuration.h:143/222` 才定义 ——
@@ -470,7 +480,7 @@ if (power > loraMaxPower) power = loraMaxPower;   // ← loraMaxPower = SX126X_M
 
 | 文件 | 改动 | 为什么必须在这里 |
 | --- | --- | --- |
-| `src/configuration.h` | 在 `EBYTE_E22_900M30S` 段**之后**追加小功率覆盖块（仅 `TMESH_S3_E22 && TMESH_LOW_POWER_TEST` 时生效） | `SX126X_MAX_POWER` 在本文件 147 行才定义，覆盖必须在其后 |
+| `src/configuration.h` | 在 `EBYTE_E22_*` 各段**之后**追加小功率覆盖块（仅 `TMESH_S3_E22 && TMESH_LOW_POWER_TEST` 时生效，且按模块区分数值） | `SX126X_MAX_POWER` 在各模块段内才定义，覆盖必须在其后 |
 | `src/mesh/SX126xInterface.cpp` | 顶部（所有头文件之后）追加编译期断言块，`#if defined(TMESH_S3_E22)` 包裹 | 需要 `TX_GAIN_LORA` / `NUM_PA_POINTS` / `SX126X_MAX_POWER` 全部展开后 |
 
 两处都用 `#if defined(TMESH_S3_E22)` 严格限定，**不影响其他任何板子**。
@@ -482,7 +492,7 @@ if (power > loraMaxPower) power = loraMaxPower;   // ← loraMaxPower = SX126X_M
 `NICERF_F30_HF`、`RAK13302` 的处理方式：在 `configuration.h` 里加一段
 `#ifdef <你的板级宏>` 并给出实测功率曲线。
 
-本板可以直接复用上游已有的 `EBYTE_E22_900M30S`，所以**只差小功率调试开关**这一项。
+本板可以直接复用上游已有的 `EBYTE_E22_900M33S`（2 W 档），所以**只差小功率调试开关**这一项。
 
 ---
 
